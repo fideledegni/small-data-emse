@@ -1,0 +1,122 @@
+---
+title: "Advanced Numerical Engineering"
+subtitle: "Case study Volcano"
+output: pdf_document
+author: "Fidèle DEGNI et Leticia RODRIGUES"
+date: "9 janvier 2018"
+---
+
+```{r setup, echo=FALSE}
+rm(list=ls()) #  cleaning up
+#setwd('~/Dropbox/ICM-EMSE/0_3A/Data_Science/4_Small_Data/advanced_num_engineering/TP')
+setwd('C:/Users/Fidèle DEGNI/Dropbox/ICM-EMSE/0_3A/Data_Science/4_Small_Data/advanced_num_engineering/TP')
+
+# reminer of detailed information available in the "volcan_test_case.pdf" file
+source("mainScript_DatascienceClass.R")
+
+library(DiceOptim)
+library(sensitivity)
+library(pairsD3)
+library(rgenoud)
+library(KrigInv)
+```
+
+# Preliminary sample model
+## 0. Design of experiment
+
+Latin hypercubes :
+
+```{r latin_hypercubes}
+generateLHS <- function(npts, dim) {
+  X <- matrix(nrow = npts, ncol = dim)
+  for (i in 1:dim) {
+    X[, i] <- sample.int(npts) - 1
+  }
+  #Normalisation pour avoir les coordonnees entre 0 et 1
+  X <- X/(npts-1)
+  return(X)
+}
+
+# Plan d'expériences avec hypercubes latins
+npts <- 100
+dim <- 5
+design.fact <- generateLHS(npts, dim)
+varnames <- c("xs", "ys", "zs", "a", "p")
+dimnames(design.fact) <- list(NULL,varnames)
+```
+
+```{r latin_hypercubes_pairs_plot, echo = FALSE}
+pairs(design.fact, labels = varnames)
+title("Pairs polot")
+```
+
+```{r latin_hypercubes_pairsD3_plot, echo = FALSE}
+pairsD3(design.fact, labels = varnames)
+```
+
+```{r latin_hypercubes_parcoord, echo = FALSE}
+#parcoord(design.fact, col = c(1, 2, 3, 4, 5))
+library(plotly)
+data.frame(cbind(design.fact, response)) %>% plot_ly(type = "parcoords", 
+dimensions = list(
+    list(range = c(.1, 1), labels = varnames[1], values = ~xs),
+    list(range = c(.1, 1), labels = varnames[2], values = ~ys),
+    list(range = c(.1, 1), labels = varnames[3], values = ~zs),
+    list(range = c(.1, 1), labels = varnames[4], values = ~a),
+    list(range = c(.1, 1), labels = varnames[5], values = ~p),
+    list(range = range(response), labels = "response", values = ~response)
+  ))
+```
+
+
+# Magma chamber optimization
+## 1. Optimization for wls < -1.5
+
+```{r magma_chambers, echo = FALSE}
+response = compute_wls(design.fact)
+plot(response, ylab = "Observation", main = "Obsevation des valeurs calculées par compute_wls")
+abline(a = -1.5, b = 0, col = "red")
+optim_indexes <- which(response < -1.5)
+optim_values <- design.fact[optim_indexes, ]
+```
+Calibrated magma chambers coordinates :
+```{r magma_chambers_values, echo = FALSE}
+print(optim_values)
+```
+
+# Full identification of magma chamber
+##  2. Target level for inversion
+```{r oEGO, echo = FALSE}
+# Modèle de krigeage
+fitted.model1 <- km(~1, design=design.fact, response=response,
+                    covtype="matern5_2", control=list(pop.size=50,trace=FALSE), parinit=c(0.5, 0.5))
+#plot(fitted.model1)
+
+nsteps <- 25
+lower <- rep(0,dim)
+upper <- rep(1,dim)
+oEGO <- EGO.nsteps(model=fitted.model1, fun=compute_wls, nsteps=nsteps,
+                   lower=lower, upper=upper, control=list(pop.size=20, BFGSburnin=2))
+print(oEGO$par)
+print(oEGO$value)
+
+target_level_value <- oEGO$value[which.min(oEGO$value)]
+target_level_coords <- oEGO$par[which.min(oEGO$value),]
+```
+
+## 3. Bichon criterion for invzersion
+```{r oEGO, echo = FALSE}
+optimcontrol <- list(method="genoud",pop.size=50)
+obj <- max_infill_criterion(lower=lower,upper=upper,optimcontrol=optimcontrol,
+                             method="bichon",T=target_level_value,model=fitted.model1)
+
+ #?max_sur
+# max_sur_parallel
+```
+
+
+
+
+
+
+
